@@ -50,13 +50,16 @@ git clone https://github.com/vamhana/mp.git
 cd mp
 flutter pub get
 flutter run
+```
 
 Сборка релизного APK
-bash
+```bash
 flutter build apk --release
 # результат: build/app/outputs/flutter-apk/app-release.apk
+```
+
 📂 Структура проекта
-text
+```
 lib/
 ├── app.dart                          # корень приложения, темы, локализация
 ├── main.dart                         # точка входа
@@ -70,6 +73,7 @@ lib/
 │   └── screens/                      # Home, Library, Player, Settings
 └── services/audio_handler.dart       # MpAudioHandler (audio_service + just_audio)
 Аудиофайлы для стартового плейлиста лежат в assets/preinstalled/, коллажи — в assets/collages/, иконка приложения — assets/icon.png.
+```
 
 🎼 Стартовый плейлист
 В APK вшиты 12 оригинальных треков автора. При первом запуске они копируются в приватное хранилище и появляются в библиотеке как обычные треки. Пользователь может их удалить — они не вернутся (флаг в SharedPreferences).
