@@ -1,0 +1,463 @@
+﻿// |P.3.02.02|Presentation|Screen|Dart|lib/presentation/screens/library_tab.dart|C.1.01.02, C.1.01.03, D.2.02.01, D.2.03.01, P.3.01.01, P.3.01.02|v.0.0.02|Draft|—|
+import 'dart:io';
+
+import 'package:audio_service/audio_service.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/utils/permissions.dart';
+import '../../core/utils/track_sharer.dart';
+import '../../data/models/track.dart';
+import '../../data/repositories/track_repository.dart';
+import '../providers/audio_providers.dart';
+import '../providers/track_providers.dart';
+
+class LibraryTab extends ConsumerStatefulWidget {
+  const LibraryTab({super.key});
+
+  @override
+  ConsumerState<LibraryTab> createState() => _LibraryTabState();
+}
+
+class _LibraryTabState extends ConsumerState<LibraryTab> {
+  bool _selectionMode = false;
+  final Set<int> _selectedIds = {};
+
+  // --- Синхронизация ---
+
+  Future<void> _runSync() async {
+    if (!mounted) return;
+    final ok = await ensureAudioPermission(context);
+    if (!ok) return;
+
+    final repo = ref.read(trackRepositoryProvider);
+    ref.read(syncProgressProvider.notifier).state =
+        const SyncProgress(current: 0, total: 0, fileName: '');
+
+    try {
+      final added = await repo.syncAll(
+        onProgress: (p) {
+          if (mounted) ref.read(syncProgressProvider.notifier).state = p;
+        },
+      );
+      ref.invalidate(tracksProvider);
+      if (mounted) {
+        _snack(added == 0
+            ? 'Новых треков не найдено'
+            : 'Добавлено треков: $added');
+      }
+    } catch (e) {
+      if (mounted) _snack('Ошибка синхронизации: $e');
+    } finally {
+      ref.read(syncProgressProvider.notifier).state = null;
+    }
+  }
+
+  // --- Reorder ---
+
+  Future<void> _move(List<Track> tracks, int index, int delta) async {
+    final target = index + delta;
+    if (target < 0 || target >= tracks.length) return;
+
+    final list = List<Track>.from(tracks);
+    final item = list.removeAt(index);
+    list.insert(target, item);
+
+    await ref.read(trackRepositoryProvider).db.rewriteOrder(list);
+    ref.invalidate(tracksProvider);
+
+    final handler = ref.read(audioHandlerProvider).requireValue;
+    if (handler.queue.value.isNotEmpty) {
+      await handler.reloadQueue(list.map(_toMediaItem).toList());
+    }
+  }
+
+  // --- Удаление ---
+
+  Future<void> _delete(Track track) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Удалить из списка?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('«${track.displayTitle}» будет удалён из списка MP.'),
+            const SizedBox(height: 12),
+            Text(
+              'Оригинальный файл на телефоне останется на месте — '
+              'вы сможете снова добавить его через кнопку «Обновить».',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить из списка'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final handler = ref.read(audioHandlerProvider).requireValue;
+    final trackIdStr = track.id?.toString();
+    final wasCurrent = trackIdStr != null &&
+        handler.mediaItem.value?.id == trackIdStr;
+    final wasInQueue = trackIdStr != null &&
+        handler.queue.value.any((mi) => mi.id == trackIdStr);
+
+    if (wasCurrent) await handler.stop();
+
+    await ref.read(trackRepositoryProvider).deleteTrack(track);
+    ref.invalidate(tracksProvider);
+
+    if (wasInQueue && !wasCurrent) {
+      final remaining = handler.queue.value
+          .where((mi) => mi.id != trackIdStr)
+          .toList(growable: false);
+      if (remaining.isEmpty) {
+        await handler.stop();
+      } else {
+        await handler.reloadQueue(remaining);
+      }
+    }
+
+    if (mounted) _snack('Удалён из списка');
+  }
+
+  // --- Воспроизведение ---
+
+  Future<void> _play(List<Track> tracks, int index) async {
+    final handler = ref.read(audioHandlerProvider).requireValue;
+
+    // 1. Загружаем плейлист (внутри выставляется mediaItem)
+    await handler.loadPlaylist(
+      tracks.map(_toMediaItem).toList(),
+      initialIndex: index,
+    );
+
+    // 2. Переключаем вкладку ДО play() и permission-диалога
+    if (mounted) {
+      try {
+        DefaultTabController.of(context).animateTo(0);
+      } catch (e) {
+        debugPrint('[play] tab switch failed: $e');
+      }
+    }
+
+    // 3. Разрешение + воспроизведение
+    await requestNotificationPermission();
+    await handler.play();
+  }
+
+  MediaItem _toMediaItem(Track t) => MediaItem(
+        id: t.id.toString(),
+        title: t.displayTitle,
+        artist: t.displayArtist,
+        duration: t.duration,
+        artUri: t.coverPath != null ? Uri.file(t.coverPath!) : null,
+        extras: {'filePath': t.filePath},
+      );
+
+  // --- Share ---
+
+  Future<void> _shareSingle(Track t) async {
+    await TrackSharer.share([t]);
+  }
+
+  Future<void> _shareSelected(List<Track> tracks) async {
+    final selected = tracks
+        .where((t) => t.id != null && _selectedIds.contains(t.id))
+        .toList(growable: false);
+    if (selected.isEmpty) return;
+
+    _exitSelectionMode();
+    await TrackSharer.share(selected);
+  }
+
+  // --- Selection mode ---
+
+  void _enterSelectionMode(Track first) {
+    setState(() {
+      _selectionMode = true;
+      _selectedIds
+        ..clear()
+        ..addIfNotNull(first.id);
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _selectionMode = false;
+      _selectedIds.clear();
+    });
+  }
+
+  void _toggleSelection(Track t) {
+    if (t.id == null) return;
+    setState(() {
+      if (_selectedIds.contains(t.id)) {
+        _selectedIds.remove(t.id);
+      } else {
+        if (_selectedIds.length >= TrackSharer.maxTracks) {
+          _snack('Можно выбрать не более ${TrackSharer.maxTracks} треков');
+          return;
+        }
+        _selectedIds.add(t.id!);
+      }
+    });
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  // --- UI ---
+
+  @override
+  Widget build(BuildContext context) {
+    final asyncTracks = ref.watch(tracksProvider);
+    final progress = ref.watch(syncProgressProvider);
+    final tracks = asyncTracks.valueOrNull ?? const <Track>[];
+
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _selectionMode) _exitSelectionMode();
+      },
+      child: Column(
+        children: [
+          if (_selectionMode)
+            _SelectionBar(
+              selectedCount: _selectedIds.length,
+              onCancel: _exitSelectionMode,
+              onShare: _selectedIds.isEmpty
+                  ? null
+                  : () => _shareSelected(tracks),
+            ),
+          if (progress != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  LinearProgressIndicator(
+                    value: progress.total == 0 ? null : progress.fraction,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    progress.total == 0
+                        ? 'Поиск MP3…'
+                        : 'Копирование ${progress.current}/${progress.total} '
+                            '${progress.fileName}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          if (!_selectionMode)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: progress != null ? null : _runSync,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Обновить'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: asyncTracks.when(
+              data: (tracks) {
+                if (tracks.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text(
+                        'Список пуст. Нажмите «Обновить», чтобы найти MP3.',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+                return ListView.separated(
+                  itemCount: tracks.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) => _buildRow(tracks, i),
+                );
+              },
+              loading: () =>
+                  const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Ошибка: $e')),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRow(List<Track> tracks, int i) {
+    final t = tracks[i];
+    final selected = t.id != null && _selectedIds.contains(t.id);
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+      selected: _selectionMode && selected,
+      leading: SizedBox(
+        width: 48,
+        height: 48,
+        child: t.coverPath != null
+            ? Image.file(
+                File(t.coverPath!),
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.music_note),
+              )
+            : const Icon(Icons.music_note),
+      ),
+      title: Text(
+        t.displayTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${t.displayArtist} • ${_fmt(t.duration)}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      onTap: _selectionMode ? () => _toggleSelection(t) : () => _play(tracks, i),
+      onLongPress: _selectionMode ? null : () => _enterSelectionMode(t),
+      trailing: _selectionMode
+          ? Checkbox(
+              value: selected,
+              onChanged: (_) => _toggleSelection(t),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 20,
+                  onPressed: i == 0 ? null : () => _move(tracks, i, -1),
+                  icon: const Icon(Icons.arrow_upward),
+                  tooltip: 'Вверх',
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 20,
+                  onPressed: i == tracks.length - 1
+                      ? null
+                      : () => _move(tracks, i, 1),
+                  icon: const Icon(Icons.arrow_downward),
+                  tooltip: 'Вниз',
+                ),
+                _ShareButton(
+                  onTap: () => _shareSingle(t),
+                  onLongPress: () => _enterSelectionMode(t),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 20,
+                  onPressed: () => _delete(t),
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Удалить',
+                ),
+              ],
+            ),
+    );
+  }
+
+  String _fmt(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+}
+
+class _SelectionBar extends StatelessWidget {
+  final int selectedCount;
+  final VoidCallback onCancel;
+  final VoidCallback? onShare;
+
+  const _SelectionBar({
+    required this.selectedCount,
+    required this.onCancel,
+    required this.onShare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: onCancel,
+              icon: const Icon(Icons.close),
+              tooltip: 'Отмена',
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$selectedCount / ${TrackSharer.maxTracks}',
+              style: theme.textTheme.titleMedium,
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: onShare,
+              icon: const Icon(Icons.share),
+              label: const Text('Поделиться'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+extension _AddIfNotNull<T> on Set<T> {
+  void addIfNotNull(T? value) {
+    if (value != null) add(value);
+  }
+}
+
+/// Кнопка «Поделиться»: короткий тап — отправить один трек,
+/// долгое нажатие — войти в режим выбора нескольких.
+class _ShareButton extends StatelessWidget {
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _ShareButton({required this.onTap, required this.onLongPress});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Поделиться\n(удерживайте — выбрать несколько)',
+      triggerMode: TooltipTriggerMode.manual,
+      child: InkResponse(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        radius: 20,
+        child: const Padding(
+          padding: EdgeInsets.all(10),
+          child: Icon(Icons.share_outlined, size: 20),
+        ),
+      ),
+    );
+  }
+}

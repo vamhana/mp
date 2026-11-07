@@ -1,0 +1,53 @@
+# ===== Flutter / Dart =====
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# ===== IDE =====
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== Generated Dart =====
+*.g.dart
+*.freezed.dart
+
+# ===== Android signing / secrets =====
+*.jks
+*.keystore
+android/key.properties
+.env
+.env.*
+
+# ===== Release binaries =====
+*.apk
+*.aab
+*.ipa
+app-release.apk
+build/app/outputs/flutter-apk/*.apk
+
+# ===== Local / machine-specific =====
+android/local.properties
+**/GeneratedPluginRegistrant.java
+android/.gradle/
+
+# ===== Personal scripts / docs =====
+клей.py
+клей.md
+check_files.py
+check_files.md
+т_з.txt
+id_navigator_2.py

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Modify this file to customize your launch splash screen -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Фон (например, черный) -->
+    <item android:drawable="@android:color/black" />
+
+    <!-- Иконка с увеличенным размером -->
+    <item
+        android:width="280dp"
+        android:height="280dp"
+        android:gravity="center"
+        android:drawable="@drawable/splash_icon" />
+</layer-list>
+</layer-list>

@@ -1,0 +1,56 @@
+﻿name: mp
+description: MP — локальный MP3 плеер с фоновым воспроизведением
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.19.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Управление состоянием
+  flutter_riverpod: ^2.5.1
+
+  # Аудио
+  just_audio: ^0.9.42
+  audio_service: ^0.18.15
+
+  # Сканер медиатеки и разрешения
+  on_audio_query: ^2.9.0
+  permission_handler: ^11.3.1
+  device_info_plus: ^10.1.2
+
+  # Файлы и БД
+  path_provider: ^2.1.4
+  sqflite: ^2.3.3+1
+
+  # Фичи v2
+  share_plus: ^10.1.2
+  marquee: ^2.2.3
+  audio_metadata_reader: ^1.4.2
+
+  cupertino_icons: ^1.0.8
+  # Фичи v3 — предзагруженные треки
+  shared_preferences: ^2.3.3
+  
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/collages/
+    - assets/preinstalled/
+    - assets/icon.png
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/icon.png"
