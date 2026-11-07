@@ -57,7 +57,10 @@ flutter run
 flutter build apk --release
 # результат: build/app/outputs/flutter-apk/app-release.apk
 ```
-
+скачать и установить плеер мгновенно:
+```
+https://github.com/vamhana/mp/releases/download/v0.0.02/app-release.apk
+```
 📂 Структура проекта
 ```
 lib/
