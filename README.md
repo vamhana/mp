@@ -61,6 +61,12 @@ flutter build apk --release
 ```
 https://github.com/vamhana/mp/releases/download/v0.0.02/app-release.apk
 ```
+GitHub Releases в России периодически отдаёт `504 Gateway Timeout` из-за проблем с CDN. Используйте зеркало — файл тот же:
+
+- **APK:** [app-release.apk (163 MB)]
+```
+https://ghfile.geekertao.top/https://github.com/vamhana/mp/releases/download/v0.0.02/app-release.apk
+```
 📂 Структура проекта
 ```
 lib/
