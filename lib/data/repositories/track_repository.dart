@@ -1,4 +1,4 @@
-﻿// |D.2.03.01|Data|Repository|Dart|lib/data/repositories/track_repository.dart|D.2.01.01, D.2.01.02, D.2.01.03, D.2.02.01|v.0.0.10|Draft|—|
+﻿// |D.2.03.01|Data|Repository|Dart|lib/data/repositories/track_repository.dart|D.2.01.01, D.2.01.02, D.2.01.03, D.2.02.01|v.0.0.11|Draft|—|
 import 'dart:io';
 import 'package:on_audio_query/on_audio_query.dart';
 
@@ -175,10 +175,14 @@ class TrackRepository {
       final localId = nextLocalId--;
 
       try {
+        // Сохраняем настоящий filename с расширением, а не только title из тега.
+        // Иначе файл в mp3_library ляжет без расширения и MIME для шаринга
+        // станет audio/* — share_plus на таком молча падает.
+        final originalName = lf.path.split(Platform.pathSeparator).last;
         final copiedPath = await copier.copyMp3(
           mediaStoreId: localId,
           sourcePath: lf.path,
-          originalName: lf.title,
+          originalName: originalName.isEmpty ? '${lf.title}.mp3' : originalName,
         );
 
         String? coverPath;

@@ -260,7 +260,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
   // --- Share ---
 
   Future<void> _shareSingle(Track t) async {
-    await TrackSharer.share([t]);
+    final ok = await TrackSharer.share([t]);
+    if (!ok && mounted) _snack('Не удалось поделиться треком');
   }
 
   Future<void> _shareSelected(List<Track> tracks) async {
@@ -281,7 +282,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
         'Отправляю первые ${TrackSharer.maxTracks} из ${selected.length}',
       );
     }
-    await TrackSharer.share(capped);
+    final ok = await TrackSharer.share(capped);
+    if (!ok && mounted) _snack('Не удалось поделиться');
   }
 
   // --- Selection mode ---
