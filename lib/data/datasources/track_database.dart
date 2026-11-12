@@ -48,6 +48,19 @@ class TrackDatabase {
     return (mx ?? -1) + 1;
   }
 
+  /// Проверяет, есть ли уже трек с указанным оригинальным именем файла.
+  /// Хранится как "<mediaStoreId>__<originalName>" в filePath.
+  Future<bool> existsByOriginalName(String fileName) async {
+    final db = await _database;
+    final rows = await db.query(
+      _table,
+      where: 'filePath LIKE ?',
+      whereArgs: ['%__$fileName'],
+      limit: 1,
+    );
+    return rows.isNotEmpty;
+  }
+
   Future<bool> exists(int mediaStoreId) async {
     final db = await _database;
     final rows = await db.query(

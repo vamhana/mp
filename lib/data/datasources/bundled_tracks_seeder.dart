@@ -25,9 +25,9 @@ class BundledTracksSeeder {
   BundledTracksSeeder._();
   static final BundledTracksSeeder instance = BundledTracksSeeder._();
 
-  static const _seededKey = 'bundled_tracks_seeded_v1';
+  static const _seededKey = 'bundled_tracks_seeded_v2';
   static const _assetPrefix = 'assets/preinstalled/';
-  static const int _maxBundled = 20;
+  static const int _maxBundled = 50;
 
   /// Возвращает количество добавленных треков.
   ///
@@ -59,13 +59,17 @@ class BundledTracksSeeder {
 
       var inserted = 0;
       var nextIndex = await db.nextOrderIndex();
-      var fakeId = -1;
+      // Уникальные fakeId для новых треков; старые не трогаем.
+      var nextFakeId = -DateTime.now().millisecondsSinceEpoch;
 
       for (final asset in assets.take(_maxBundled)) {
-        // Idempotency: если трек уже в БД, пропускаем без перезаписи.
-        if (await db.exists(fakeId)) {
-          debugPrint('[seeder] skip existing id=$fakeId ($asset)');
-          fakeId--;
+        final filename = asset.split('/').last;
+
+        // Идемпотентность по имени файла, не по позиции в списке.
+        // Позиционный fakeId ломался при добавлении новых песен: сдвиг
+        // индексов → старые записи «закрывали» слоты новых.
+        if (await db.existsByOriginalName(filename)) {
+          debugPrint('[seeder] skip existing "$filename"');
           continue;
         }
 
@@ -73,11 +77,11 @@ class BundledTracksSeeder {
           final bytes = await _loadAsset(asset);
           if (bytes.isEmpty) {
             debugPrint('[seeder] empty asset: $asset');
-            fakeId--;
             continue;
           }
 
-          final filename = asset.split('/').last;
+          final fakeId = nextFakeId--;
+
           final destFile = await _writeToPrivateStorage(
             copier: copier,
             bytes: bytes,
@@ -106,10 +110,8 @@ class BundledTracksSeeder {
           debugPrint(
             '[seeder] + $asset → id=$fakeId, "${meta.title}" / "${meta.artist}"',
           );
-          fakeId--;
         } catch (e) {
           debugPrint('[seeder] ERROR on $asset: $e');
-          fakeId--;
         }
       }
 
