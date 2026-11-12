@@ -1,4 +1,4 @@
-﻿// |P.3.02.02|Presentation|Screen|Dart|lib/presentation/screens/library_tab.dart|C.1.01.02, C.1.01.03, D.2.02.01, D.2.03.01, P.3.01.01, P.3.01.02|v.0.0.02|Draft|—|
+﻿// |P.3.02.02|Presentation|Screen|Dart|lib/presentation/screens/library_tab.dart|C.1.01.02, C.1.01.03, D.2.02.01, D.2.03.01, P.3.01.01, P.3.01.02|v.0.0.03|Draft|—|
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
@@ -29,6 +29,38 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
     if (!mounted) return;
     final ok = await ensureAudioPermission(context);
     if (!ok) return;
+
+    // WhatsApp/Telegram/MAX без MANAGE_EXTERNAL_STORAGE не прочитать.
+    final hasAll = await hasManageExternalStorage();
+    if (!hasAll) {
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Нужен доступ ко всем файлам'),
+          content: const Text(
+            'Чтобы находить MP3 в папках WhatsApp, Telegram, MAX и других '
+            'мессенджеров, нужно разрешение «Доступ ко всем файлам».\n\n'
+            'Открыть настройки и включить?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Не сейчас'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Открыть настройки'),
+            ),
+          ],
+        ),
+      );
+      if (go == true) {
+        await openManageExternalStorageSettings();
+      }
+      // Продолжаем синк без MANAGE_EXTERNAL_STORAGE — найдёт то,
+      // что доступно (Download, Music, приватная папка).
+    }
 
     final repo = ref.read(trackRepositoryProvider);
     ref.read(syncProgressProvider.notifier).state =
@@ -72,7 +104,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
     }
   }
 
-  // --- Удаление ---
+  // --- Удаление (одиночное) ---
 
   Future<void> _delete(Track track) async {
     final confirmed = await showDialog<bool>(
@@ -132,18 +164,78 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
     if (mounted) _snack('Удалён из списка');
   }
 
+  // --- Удаление (массовое, из режима выбора) ---
+
+  Future<void> _deleteSelected(List<Track> tracks) async {
+    final selected = tracks
+        .where((t) => t.id != null && _selectedIds.contains(t.id))
+        .toList(growable: false);
+    if (selected.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Удалить из списка ${selected.length} треков?'),
+        content: const Text(
+          'Треки будут удалены из списка MP. '
+          'Оригинальные файлы на телефоне останутся на месте — '
+          'их можно снова добавить через «Обновить».',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Удалить (${selected.length})'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final handler = ref.read(audioHandlerProvider).requireValue;
+    final selectedIdStrs = selected
+        .map((t) => t.id?.toString())
+        .whereType<String>()
+        .toSet();
+
+    final wasInQueue =
+        handler.queue.value.any((mi) => selectedIdStrs.contains(mi.id));
+
+    final repo = ref.read(trackRepositoryProvider);
+    for (final t in selected) {
+      await repo.deleteTrack(t);
+    }
+
+    if (wasInQueue) {
+      final remaining = handler.queue.value
+          .where((mi) => !selectedIdStrs.contains(mi.id))
+          .toList(growable: false);
+      if (remaining.isEmpty) {
+        await handler.stop();
+      } else {
+        await handler.reloadQueue(remaining);
+      }
+    }
+
+    ref.invalidate(tracksProvider);
+    _exitSelectionMode();
+
+    if (mounted) _snack('Удалено из списка: ${selected.length}');
+  }
+
   // --- Воспроизведение ---
 
   Future<void> _play(List<Track> tracks, int index) async {
     final handler = ref.read(audioHandlerProvider).requireValue;
 
-    // 1. Загружаем плейлист (внутри выставляется mediaItem)
     await handler.loadPlaylist(
       tracks.map(_toMediaItem).toList(),
       initialIndex: index,
     );
 
-    // 2. Переключаем вкладку ДО play() и permission-диалога
     if (mounted) {
       try {
         DefaultTabController.of(context).animateTo(0);
@@ -152,7 +244,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
       }
     }
 
-    // 3. Разрешение + воспроизведение
     await requestNotificationPermission();
     await handler.play();
   }
@@ -178,8 +269,19 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
         .toList(growable: false);
     if (selected.isEmpty) return;
 
+    final capped = selected.length > TrackSharer.maxTracks
+        ? selected.take(TrackSharer.maxTracks).toList(growable: false)
+        : selected;
+
+    final wasTrimmed = capped.length < selected.length;
+
     _exitSelectionMode();
-    await TrackSharer.share(selected);
+    if (wasTrimmed) {
+      _snack(
+        'Отправляю первые ${TrackSharer.maxTracks} из ${selected.length}',
+      );
+    }
+    await TrackSharer.share(capped);
   }
 
   // --- Selection mode ---
@@ -206,11 +308,19 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
       if (_selectedIds.contains(t.id)) {
         _selectedIds.remove(t.id);
       } else {
-        if (_selectedIds.length >= TrackSharer.maxTracks) {
-          _snack('Можно выбрать не более ${TrackSharer.maxTracks} треков');
-          return;
-        }
         _selectedIds.add(t.id!);
+      }
+    });
+  }
+
+  void _toggleSelectAll(List<Track> tracks) {
+    setState(() {
+      if (_selectedIds.length == tracks.length) {
+        _selectedIds.clear();
+      } else {
+        _selectedIds
+          ..clear()
+          ..addAll(tracks.map((t) => t.id).whereType<int>());
       }
     });
   }
@@ -237,10 +347,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
           if (_selectionMode)
             _SelectionBar(
               selectedCount: _selectedIds.length,
+              totalCount: tracks.length,
               onCancel: _exitSelectionMode,
+              onToggleAll:
+                  tracks.isEmpty ? null : () => _toggleSelectAll(tracks),
               onShare: _selectedIds.isEmpty
                   ? null
                   : () => _shareSelected(tracks),
+              onDelete: _selectedIds.isEmpty
+                  ? null
+                  : () => _deleteSelected(tracks),
             ),
           if (progress != null)
             Padding(
@@ -364,16 +480,19 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
                   icon: const Icon(Icons.arrow_downward),
                   tooltip: 'Вниз',
                 ),
-                _ShareButton(
+                _LongPressIconButton(
+                  icon: Icons.share_outlined,
+                  tooltip:
+                      'Поделиться\n(удерживайте — выбрать несколько)',
                   onTap: () => _shareSingle(t),
                   onLongPress: () => _enterSelectionMode(t),
                 ),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 20,
-                  onPressed: () => _delete(t),
-                  icon: const Icon(Icons.close),
-                  tooltip: 'Удалить',
+                _LongPressIconButton(
+                  icon: Icons.close,
+                  tooltip:
+                      'Удалить из списка\n(удерживайте — выбрать несколько)',
+                  onTap: () => _delete(t),
+                  onLongPress: () => _enterSelectionMode(t),
                 ),
               ],
             ),
@@ -389,22 +508,30 @@ class _LibraryTabState extends ConsumerState<LibraryTab> {
 
 class _SelectionBar extends StatelessWidget {
   final int selectedCount;
+  final int totalCount;
   final VoidCallback onCancel;
+  final VoidCallback? onToggleAll;
   final VoidCallback? onShare;
+  final VoidCallback? onDelete;
 
   const _SelectionBar({
     required this.selectedCount,
+    required this.totalCount,
     required this.onCancel,
+    required this.onToggleAll,
     required this.onShare,
+    required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final allSelected = totalCount > 0 && selectedCount == totalCount;
+
     return Material(
       color: theme.colorScheme.surfaceContainerHighest,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Row(
           children: [
             IconButton(
@@ -412,16 +539,27 @@ class _SelectionBar extends StatelessWidget {
               icon: const Icon(Icons.close),
               tooltip: 'Отмена',
             ),
-            const SizedBox(width: 4),
+            Checkbox(
+              value: allSelected,
+              onChanged:
+                  onToggleAll == null ? null : (_) => onToggleAll!(),
+            ),
+            const Text('Все'),
+            const SizedBox(width: 8),
             Text(
-              '$selectedCount / ${TrackSharer.maxTracks}',
-              style: theme.textTheme.titleMedium,
+              '$selectedCount / $totalCount',
+              style: theme.textTheme.titleSmall,
             ),
             const Spacer(),
-            FilledButton.icon(
+            IconButton(
               onPressed: onShare,
               icon: const Icon(Icons.share),
-              label: const Text('Поделиться'),
+              tooltip: 'Поделиться',
+            ),
+            IconButton(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline),
+              tooltip: 'Удалить из списка',
             ),
           ],
         ),
@@ -436,26 +574,33 @@ extension _AddIfNotNull<T> on Set<T> {
   }
 }
 
-/// Кнопка «Поделиться»: короткий тап — отправить один трек,
-/// долгое нажатие — войти в режим выбора нескольких.
-class _ShareButton extends StatelessWidget {
+/// Кнопка с иконкой: короткий тап — действие, долгое нажатие — вход в
+/// режим выбора (используется для «Поделиться» и «Удалить»).
+class _LongPressIconButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
-  const _ShareButton({required this.onTap, required this.onLongPress});
+  const _LongPressIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'Поделиться\n(удерживайте — выбрать несколько)',
+      message: tooltip,
       triggerMode: TooltipTriggerMode.manual,
       child: InkResponse(
         onTap: onTap,
         onLongPress: onLongPress,
         radius: 20,
-        child: const Padding(
-          padding: EdgeInsets.all(10),
-          child: Icon(Icons.share_outlined, size: 20),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, size: 20),
         ),
       ),
     );

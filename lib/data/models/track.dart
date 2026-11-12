@@ -28,7 +28,10 @@ class Track {
 
   String get displayTitle {
     if (title.trim().isNotEmpty) return title;
-    return filePath.split(Platform.pathSeparator).last.replaceAll(RegExp(r'\.mp3$', caseSensitive: false), '');
+    var name = filePath.split(Platform.pathSeparator).last;
+    name = name.replaceAll(RegExp(r'\.[A-Za-z0-9]+$'), '');
+    name = name.replaceFirst(RegExp(r'^-?\d+__'), '');
+    return name;
   }
 
   Duration get duration => Duration(milliseconds: durationMs);

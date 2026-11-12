@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'presentation/providers/audio_providers.dart';
 import 'presentation/screens/home_screen.dart';
+import 'presentation/screens/incoming_share_handler.dart';
 
 class MpApp extends StatelessWidget {
   const MpApp({super.key});
@@ -60,7 +61,7 @@ class _StartupGate extends ConsumerWidget {
       return const ColoredBox(color: Colors.black, child: SizedBox.expand());
     }
 
-    return const HomeScreen();
+    return const IncomingShareHandler(child: HomeScreen());
   }
 }
 

@@ -24,6 +24,14 @@
 
 |C.1.01.04|Core|Util|Dart|lib/core/utils/lyrics_reader.dart|—|v.0.0.01|Draft|—|
 
+|C.1.01.05|Core|Util|Dart|lib/core/utils/media_scanner.dart|D.2.01.02|v.0.0.01|Draft|—|
+
+|C.1.01.06|Core|Util|Dart|lib/core/utils/messenger_paths.dart|—|v.0.0.01|Draft|—|
+
+|C.1.01.07|Core|Util|Dart|lib/core/utils/share_receiver.dart|—|v.0.0.01|Draft|—|
+
+|C.1.01.08|Core|Util|Dart|lib/core/utils/channels.dart|—|v.0.0.01|Draft|—|
+
 |D.2.01.01|Data|Datasource|Dart|lib/data/datasources/file_copier.dart|—|v.0.0.02|Draft|—|
 
 |D.2.01.02|Data|Datasource|Dart|lib/data/datasources/local_media_scanner.dart|—|v.0.0.02|Draft|—|
@@ -48,10 +56,12 @@
 
 |P.3.02.04|Presentation|Screen|Dart|lib/presentation/screens/settings_screen.dart|C.1.01.02, P.3.01.02|v.0.0.02|Draft|—|
 
+|P.3.02.05|Presentation|Screen|Dart|lib/presentation/screens/incoming_share_handler.dart|C.1.01.07, D.2.03.01, P.3.01.01, P.3.01.02|v.0.0.01|Draft|—|
+
 |S.4.01.01|Services|Audio|Dart|lib/services/audio_handler.dart|—|v.0.0.02|Draft|—|
 
 |T.6.01.01|Tool|Docs|Markdown|README.md|A.1.01.01, B.5.01.01|v.0.0.01|Draft|—|
 
-|T.6.01.02|Tool|Config|Text|.gitignore|—|v.0.0.01|Draft|—|
+
 
 |T.6.01.03|Tool|Docs|Markdown|id_2.md|—|v.0.0.03|Draft|—|

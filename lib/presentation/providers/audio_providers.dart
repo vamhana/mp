@@ -1,7 +1,7 @@
 ﻿// |P.3.01.01|Presentation|Provider|Dart|lib/presentation/providers/audio_providers.dart|S.4.01.01|v.0.0.01|Draft|—|
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import '../../core/utils/channels.dart';
 import '../../core/utils/collage_picker.dart';
 import '../../data/datasources/bundled_tracks_seeder.dart';
 import '../../services/audio_handler.dart';
@@ -23,11 +23,11 @@ final audioHandlerProvider = FutureProvider<MpAudioHandler>((ref) async {
   final handler = await AudioService.init(
     builder: () => MpAudioHandler(),
     config: const AudioServiceConfig(
-      androidNotificationChannelId: 'com.example.mp.audio',
-      androidNotificationChannelName: 'MP — воспроизведение',
+      androidNotificationChannelId: AppChannels.notificationChannelId,
+      androidNotificationChannelName: AppChannels.notificationChannelName,
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
-      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidNotificationIcon: AppChannels.notificationIcon,
     ),
   );
 

@@ -1,4 +1,4 @@
-﻿<!-- |A.1.02.01|App|Platform|XML|android/app/src/main/AndroidManifest.xml|—|v.0.0.01|Draft|—| -->
+﻿<!-- |A.1.02.01|App|Platform|XML|android/app/src/main/AndroidManifest.xml|—|v.0.0.02|Draft|—| -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -16,8 +16,7 @@
     <!-- Уведомления Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
-    <!-- Полный доступ к файлам для удаления/сканирования MP3.
-         Требует отдельного разрешения в настройках и политики Play Store. -->
+    <!-- Полный доступ к файлам для удаления/сканирования MP3. -->
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage"/>
@@ -31,13 +30,14 @@
         android:label="MP"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:enableOnBackInvokedCallback="true">
+        android:enableOnBackInvokedCallback="true"
+        android:requestLegacyExternalStorage="true">
 
-        <!-- AudioServiceActivity как основная активити -->
+        <!-- AudioServiceActivity наследуется нашей MainActivity -->
         <activity
-            android:name="com.ryanheise.audioservice.AudioServiceActivity"
+            android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
@@ -50,6 +50,24 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Share to MP (системное меню «Поделиться») -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+
+            <!-- Open with MP (из файлового менеджера / по ссылке) -->
+            <intent-filter android:priority="100">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:mimeType="audio/*" />
+                <data android:scheme="file"    android:mimeType="audio/*" />
+                <data android:scheme="http"    android:mimeType="audio/*" android:host="*" />
+                <data android:scheme="https"   android:mimeType="audio/*" android:host="*" />
             </intent-filter>
         </activity>
 
